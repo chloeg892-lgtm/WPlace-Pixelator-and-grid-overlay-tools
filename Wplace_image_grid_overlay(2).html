@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Grid & Image with Download</title>
+  <style>
+    body {
+      background-color: #0d1b2a;
+      color: white;
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
+    #controls {
+      margin-bottom: 12px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      align-items: center;
+    }
+    label {
+      display: flex;
+      flex-direction: column;
+      font-size: 14px;
+      text-align: center;
+    }
+    input[type="number"] {
+      width: 60px;
+      margin-top: 6px;
+    }
+    input[type="range"] {
+      width: 160px;
+      margin-top: 6px;
+    }
+    button {
+      margin-top: 18px;
+      padding: 6px 12px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    canvas {
+      border: 1px solid #444;
+      image-rendering: pixelated;
+      cursor: grab;
+    }
+    canvas:active {
+      cursor: grabbing;
+    }
+    #tooltip {
+      position: absolute;
+      background: rgba(0,0,0,0.8);
+      color: #fff;
+      padding: 4px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+      pointer-events: none;
+      white-space: pre;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="controls">
+    <label>
+      Load Image
+      <input type="file" id="imageLoader" accept="image/*">
+    </label>
+
+    <label>
+      Grid Columns
+      <input type="range" id="colsRange" min="1" max="256" step="1" value="64">
+      <input type="number" id="colsNum" min="1" max="256" step="1" value="64">
+    </label>
+
+    <label>
+      Grid Rows
+      <input type="range" id="rowsRange" min="1" max="256" step="1" value="64">
+      <input type="number" id="rowsNum" min="1" max="256" step="1" value="64">
+    </label>
+
+    <label>
+      Scale X
+      <input type="range" id="scaleXRange" min="0.1" max="5.0" step="0.01" value="1.00">
+      <input type="number" id="scaleXNum" min="0.01" max="10.00" step="0.01" value="1.00">
+    </label>
+
+    <label>
+      Scale Y
+      <input type="range" id="scaleYRange" min="0.1" max="5.0" step="0.01" value="1.00">
+      <input type="number" id="scaleYNum" min="0.01" max="10.00" step="0.01" value="1.00">
+    </label>
+
+    <label>
+      Grid Color
+      <input type="color" id="gridColor" value="#ffffff">
+    </label>
+
+    <button id="downloadBtn">Download PNG</button>
+  </div>
+
+  <canvas id="canvas"></canvas>
+  <div id="tooltip"></div>
+
+  <script>
+    const canvas      = document.getElementById('canvas');
+    const ctx         = canvas.getContext('2d');
+    const tooltip     = document.getElementById('tooltip');
+    const imageLoader = document.getElementById('imageLoader');
+    const downloadBtn = document.getElementById('downloadBtn');
+
+    let img       = new Image();
+    let cols      = 64, rows = 64;
+    let scaleX    = 1.00, scaleY = 1.00;
+    let gridColor = '#ffffff';
+    let imgX = 0, imgY = 0;
+    let dragging = false, startX, startY, originX, originY;
+
+    function bindControl(rangeEl, numEl, onChange) {
+      rangeEl.addEventListener('input', () => {
+        const v = parseFloat(rangeEl.value);
+        numEl.value = v;
+        onChange(v);
+      });
+      numEl.addEventListener('input', () => {
+        let v = parseFloat(numEl.value) || parseFloat(rangeEl.min);
+        v = Math.min(Math.max(v, parseFloat(rangeEl.min)), parseFloat(rangeEl.max));
+        rangeEl.value = v;
+        numEl.value = v;
+        onChange(v);
+      });
+    }
+
+    bindControl(
+      document.getElementById('colsRange'),
+      document.getElementById('colsNum'),
+      v => { cols = v; drawCanvas(); }
+    );
+
+    bindControl(
+      document.getElementById('rowsRange'),
+      document.getElementById('rowsNum'),
+      v => { rows = v; drawCanvas(); }
+    );
+
+    bindControl(
+      document.getElementById('scaleXRange'),
+      document.getElementById('scaleXNum'),
+      v => { scaleX = v; drawCanvas(); }
+    );
+
+    bindControl(
+      document.getElementById('scaleYRange'),
+      document.getElementById('scaleYNum'),
+      v => { scaleY = v; drawCanvas(); }
+    );
+
+    document.getElementById('gridColor')
+            .addEventListener('input', ev => {
+              gridColor = ev.target.value;
+              drawCanvas();
+            });
+
+    imageLoader.addEventListener('change', e => {
+      const reader = new FileReader();
+      reader.onload = ev => {
+        img.onload = () => {
+          canvas.width  = img.width;
+          canvas.height = img.height;
+          imgX = imgY = 0;
+          drawCanvas();
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(e.target.files[0]);
+    });
+
+    // dragging
+    canvas.addEventListener('mousedown', e => {
+      if (!img.src) return;
+      dragging = true;
+      startX = e.clientX; startY = e.clientY;
+      originX = imgX;    originY = imgY;
+      tooltip.style.display = 'none';
+    });
+    window.addEventListener('mouseup', () => dragging = false);
+    canvas.addEventListener('mousemove', e => {
+      if (dragging) {
+        imgX = originX + (e.clientX - startX);
+        imgY = originY + (e.clientY - startY);
+        drawCanvas();
+        return;
+      }
+      showTooltip(e);
+    });
+    canvas.addEventListener('mouseleave', () => tooltip.style.display = 'none');
+
+    function showTooltip(e) {
+      if (!img.src) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left, y = e.clientY - rect.top;
+      const cellW = canvas.width  / cols;
+      const cellH = canvas.height / rows;
+      const col = Math.floor(x / cellW);
+      const row = Math.floor(y / cellH);
+      const cx  = Math.floor(col * cellW + cellW/2);
+      const cy  = Math.floor(row * cellH + cellH/2);
+      const [r,g,b] = ctx.getImageData(cx, cy, 1, 1).data;
+      const hex = "#" + [r,g,b].map(v => v.toString(16).padStart(2,'0')).join('');
+      tooltip.style.left  = `${e.pageX+8}px`;
+      tooltip.style.top   = `${e.pageY+8}px`;
+      tooltip.innerText   = `X:${col}, Y:${row}\n${hex}`;
+      tooltip.style.display = 'block';
+    }
+
+    function drawCanvas() {
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+
+      if (img.src) {
+        ctx.drawImage(
+          img, imgX, imgY,
+          img.width * scaleX,
+          img.height * scaleY
+        );
+      }
+
+      const w = canvas.width / cols, h = canvas.height / rows;
+      ctx.strokeStyle = gridColor;
+      ctx.globalAlpha = 0.3;
+      ctx.lineWidth   = 1;
+
+      for (let i = 0; i <= cols; i++) {
+        const x = i * w + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, canvas.height);
+        ctx.stroke();
+      }
+
+      for (let j = 0; j <= rows; j++) {
+        const y = j * h + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+        ctx.stroke();
+      }
+
+      ctx.globalAlpha = 1;
+    }
+
+    // Download functionality
+    downloadBtn.addEventListener('click', () => {
+      canvas.toBlob(blob => {
+        const link = document.createElement('a');
+        link.download = 'canvas.png';
+        link.href = URL.createObjectURL(blob);
+        link.click();
+        URL.revokeObjectURL(link.href);
+      }, 'image/png');
+    });
+
+  </script>
+</body>
+</html>
