@@ -1,144 +1,203 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Image Grid Overlay</title>
-<style>
-  body {
-    background-color: #0d1b2a;
-    color: white;
-    font-family: sans-serif;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 20px;
-  }
-  #controls {
-    margin-bottom: 10px;
-  }
-  canvas {
-    border: 1px solid #444;
-    image-rendering: pixelated;
-  }
-  #tooltip {
-    position: absolute;
-    background: rgba(0,0,0,0.8);
-    color: #fff;
-    padding: 4px 6px;
-    border-radius: 4px;
-    font-size: 12px;
-    pointer-events: none;
-    display: none;
-  }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Draggable Image Grid Overlay</title>
+  <style>
+    body {
+      background-color: #0d1b2a;
+      color: white;
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
+    #controls {
+      margin-bottom: 10px;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    canvas {
+      border: 1px solid #444;
+      image-rendering: pixelated;
+      cursor: grab;
+    }
+    canvas:active {
+      cursor: grabbing;
+    }
+    #tooltip {
+      position: absolute;
+      background: rgba(0,0,0,0.8);
+      color: #fff;
+      padding: 4px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+      pointer-events: none;
+      white-space: pre;
+      display: none;
+    }
+    label, button {
+      font-size: 14px;
+    }
+    input[type="number"] {
+      width: 60px;
+    }
+  </style>
 </head>
 <body>
-<div id="controls">
-  <input type="file" id="imageLoader" accept="image/*">
-  <label>Pixel resolution: <input type="number" id="pixelWidth" value="64" min="1"> × <input type="number" id="pixelHeight" value="64" min="1"></label>
-  <label>Grid color: <input type="color" id="gridColor" value="#ffffff"></label>
-  <button id="drawGrid">Apply</button>
-</div>
-<canvas id="canvas"></canvas>
-<div id="tooltip"></div>
 
-<script>
-const imageLoader = document.getElementById('imageLoader');
-const pixelWidthInput = document.getElementById('pixelWidth');
-const pixelHeightInput = document.getElementById('pixelHeight');
-const gridColorInput = document.getElementById('gridColor');
-const drawGridBtn = document.getElementById('drawGrid');
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-const tooltip = document.getElementById('tooltip');
+  <div id="controls">
+    <input type="file" id="imageLoader" accept="image/*">
+    <label>
+      Pixel resolution:
+      <input type="number" id="pixelWidth" value="64" min="0.1" step="0.1">
+      ×
+      <input type="number" id="pixelHeight" value="64" min="0.1" step="0.1">
+    </label>
+    <label>
+      Grid color:
+      <input type="color" id="gridColor" value="#ffffff">
+    </label>
+    <button id="drawGrid">Apply</button>
+  </div>
 
-let img = new Image();
-let pixelCols = 64, pixelRows = 64;
-let gridColor = '#ffffff';
+  <canvas id="canvas"></canvas>
+  <div id="tooltip"></div>
 
-imageLoader.addEventListener('change', handleImage);
-drawGridBtn.addEventListener('click', () => {
-  pixelCols = parseInt(pixelWidthInput.value);
-  pixelRows = parseInt(pixelHeightInput.value);
-  gridColor = gridColorInput.value;
-  drawImageAndGrid();
-});
+  <script>
+    const imageLoader      = document.getElementById('imageLoader');
+    const pixelWidthInput  = document.getElementById('pixelWidth');
+    const pixelHeightInput = document.getElementById('pixelHeight');
+    const gridColorInput   = document.getElementById('gridColor');
+    const drawGridBtn      = document.getElementById('drawGrid');
+    const canvas           = document.getElementById('canvas');
+    const ctx              = canvas.getContext('2d');
+    const tooltip          = document.getElementById('tooltip');
 
-gridColorInput.addEventListener('input', () => {
-  gridColor = gridColorInput.value;
-  drawImageAndGrid();
-});
+    let img        = new Image();
+    let pixelCols  = 64, pixelRows = 64;
+    let gridColor  = '#ffffff';
+    let imgX = 0, imgY = 0;
+    let dragging = false;
+    let startDragX = 0, startDragY = 0;
+    let startImgX = 0, startImgY = 0;
 
-canvas.addEventListener('mousemove', e => {
-  const rect = canvas.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
-  const col = Math.floor(x / (canvas.width / pixelCols));
-  const row = Math.floor(y / (canvas.height / pixelRows));
-
-  // Find center of the hovered cell
-  const cellW = canvas.width / pixelCols;
-  const cellH = canvas.height / pixelRows;
-  const centerX = Math.floor(col * cellW + cellW / 2);
-  const centerY = Math.floor(row * cellH + cellH / 2);
-  const pixelData = ctx.getImageData(centerX, centerY, 1, 1).data;
-  const hexColor = rgbToHex(pixelData[0], pixelData[1], pixelData[2]);
-
-  tooltip.style.left = `${e.pageX + 10}px`;
-  tooltip.style.top = `${e.pageY + 10}px`;
-  tooltip.innerText = `X: ${col}, Y: ${row}\nColor: ${hexColor}`;
-  tooltip.style.display = 'block';
-});
-
-canvas.addEventListener('mouseleave', () => {
-  tooltip.style.display = 'none';
-});
-
-function handleImage(e) {
-  const reader = new FileReader();
-  reader.onload = event => {
-    img.onload = () => {
-      canvas.width = img.width;
-      canvas.height = img.height;
+    imageLoader.addEventListener('change', handleImage);
+    drawGridBtn.addEventListener('click', () => {
+      pixelCols = parseFloat(pixelWidthInput.value) || 1;
+      pixelRows = parseFloat(pixelHeightInput.value) || 1;
+      gridColor = gridColorInput.value;
       drawImageAndGrid();
+    });
+    gridColorInput.addEventListener('input', () => {
+      gridColor = gridColorInput.value;
+      drawImageAndGrid();
+    });
+
+    canvas.addEventListener('mousedown', e => {
+      if (!img.src) return;
+      dragging    = true;
+      startDragX  = e.clientX;
+      startDragY  = e.clientY;
+      startImgX   = imgX;
+      startImgY   = imgY;
+      tooltip.style.display = 'none';
+    });
+
+    window.addEventListener('mouseup', () => {
+      dragging = false;
+    });
+
+    canvas.addEventListener('mousemove', e => {
+      if (dragging) {
+        imgX = startImgX + (e.clientX - startDragX);
+        imgY = startImgY + (e.clientY - startDragY);
+        drawImageAndGrid();
+        return;
+      }
+
+      if (!img.src) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const col = Math.floor(x / (canvas.width  / pixelCols));
+      const row = Math.floor(y / (canvas.height / pixelRows));
+
+      const cellW = canvas.width  / pixelCols;
+      const cellH = canvas.height / pixelRows;
+      const centerX = Math.floor(col * cellW + cellW / 2);
+      const centerY = Math.floor(row * cellH + cellH / 2);
+      const [r, g, b] = ctx.getImageData(centerX, centerY, 1, 1).data;
+      const hexColor = rgbToHex(r, g, b);
+
+      tooltip.style.left    = `${e.pageX + 10}px`;
+      tooltip.style.top     = `${e.pageY + 10}px`;
+      tooltip.innerText     = `X: ${col}, Y: ${row}\nColor: ${hexColor}`;
+      tooltip.style.display = 'block';
+    });
+
+    canvas.addEventListener('mouseleave', () => {
+      tooltip.style.display = 'none';
+    });
+
+    function handleImage(e) {
+      const reader = new FileReader();
+      reader.onload = ev => {
+        img.onload = () => {
+          canvas.width  = img.width;
+          canvas.height = img.height;
+          imgX = 0; imgY = 0;
+          drawImageAndGrid();
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(e.target.files[0]);
     }
-    img.src = event.target.result;
-  }
-  reader.readAsDataURL(e.target.files[0]);
-}
 
-function drawImageAndGrid() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    function drawImageAndGrid() {
+      if (!img.src) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // draw image at current offset, stretched to full canvas size
+      ctx.drawImage(img, imgX, imgY, canvas.width, canvas.height);
 
-  ctx.strokeStyle = gridColor;
-  ctx.globalAlpha = 0.3;
-  ctx.lineWidth = 1;
-  const cellW = canvas.width / pixelCols;
-  const cellH = canvas.height / pixelRows;
+      const cellW = canvas.width  / pixelCols;
+      const cellH = canvas.height / pixelRows;
 
-  for (let x = 0; x <= canvas.width; x += cellW) {
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, canvas.height);
-    ctx.stroke();
-  }
-  for (let y = 0; y <= canvas.height; y += cellH) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(canvas.width, y);
-    ctx.stroke();
-  }
-  ctx.globalAlpha = 1.0;
-}
+      ctx.strokeStyle = gridColor;
+      ctx.globalAlpha = 0.3;
+      ctx.lineWidth   = 1;
 
-function rgbToHex(r, g, b) {
-  return "#" + [r, g, b].map(v => {
-    const hex = v.toString(16);
-    return hex.length === 1 ? "0" + hex : hex;
-  }).join('');
-}
-</script>
+      // vertical lines
+      for (let i = 0; i <= pixelCols; i++) {
+        const x = i * cellW + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, canvas.height);
+        ctx.stroke();
+      }
+      // horizontal lines
+      for (let j = 0; j <= pixelRows; j++) {
+        const y = j * cellH + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+        ctx.stroke();
+      }
+
+      ctx.globalAlpha = 1.0;
+    }
+
+    function rgbToHex(r, g, b) {
+      return "#" + [r, g, b].map(v => {
+        const h = v.toString(16);
+        return h.length === 1 ? "0" + h : h;
+      }).join('');
+    }
+  </script>
+
 </body>
 </html>
