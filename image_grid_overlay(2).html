@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Image Grid Overlay</title>
+<style>
+  body {
+    background-color: #0d1b2a;
+    color: white;
+    font-family: sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+  }
+  #controls {
+    margin-bottom: 10px;
+  }
+  canvas {
+    border: 1px solid #444;
+    image-rendering: pixelated;
+  }
+  #tooltip {
+    position: absolute;
+    background: rgba(0,0,0,0.8);
+    color: #fff;
+    padding: 4px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    pointer-events: none;
+    display: none;
+  }
+</style>
+</head>
+<body>
+<div id="controls">
+  <input type="file" id="imageLoader" accept="image/*">
+  <label>Pixel resolution: <input type="number" id="pixelWidth" value="64" min="1"> × <input type="number" id="pixelHeight" value="64" min="1"></label>
+  <label>Grid color: <input type="color" id="gridColor" value="#ffffff"></label>
+  <button id="drawGrid">Apply</button>
+</div>
+<canvas id="canvas"></canvas>
+<div id="tooltip"></div>
+
+<script>
+const imageLoader = document.getElementById('imageLoader');
+const pixelWidthInput = document.getElementById('pixelWidth');
+const pixelHeightInput = document.getElementById('pixelHeight');
+const gridColorInput = document.getElementById('gridColor');
+const drawGridBtn = document.getElementById('drawGrid');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const tooltip = document.getElementById('tooltip');
+
+let img = new Image();
+let pixelCols = 64, pixelRows = 64;
+let gridColor = '#ffffff';
+
+imageLoader.addEventListener('change', handleImage);
+drawGridBtn.addEventListener('click', () => {
+  pixelCols = parseInt(pixelWidthInput.value);
+  pixelRows = parseInt(pixelHeightInput.value);
+  gridColor = gridColorInput.value;
+  drawImageAndGrid();
+});
+
+gridColorInput.addEventListener('input', () => {
+  gridColor = gridColorInput.value;
+  drawImageAndGrid();
+});
+
+canvas.addEventListener('mousemove', e => {
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  const col = Math.floor(x / (canvas.width / pixelCols));
+  const row = Math.floor(y / (canvas.height / pixelRows));
+
+  // Find center of the hovered cell
+  const cellW = canvas.width / pixelCols;
+  const cellH = canvas.height / pixelRows;
+  const centerX = Math.floor(col * cellW + cellW / 2);
+  const centerY = Math.floor(row * cellH + cellH / 2);
+  const pixelData = ctx.getImageData(centerX, centerY, 1, 1).data;
+  const hexColor = rgbToHex(pixelData[0], pixelData[1], pixelData[2]);
+
+  tooltip.style.left = `${e.pageX + 10}px`;
+  tooltip.style.top = `${e.pageY + 10}px`;
+  tooltip.innerText = `X: ${col}, Y: ${row}\nColor: ${hexColor}`;
+  tooltip.style.display = 'block';
+});
+
+canvas.addEventListener('mouseleave', () => {
+  tooltip.style.display = 'none';
+});
+
+function handleImage(e) {
+  const reader = new FileReader();
+  reader.onload = event => {
+    img.onload = () => {
+      canvas.width = img.width;
+      canvas.height = img.height;
+      drawImageAndGrid();
+    }
+    img.src = event.target.result;
+  }
+  reader.readAsDataURL(e.target.files[0]);
+}
+
+function drawImageAndGrid() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+  ctx.strokeStyle = gridColor;
+  ctx.globalAlpha = 0.3;
+  ctx.lineWidth = 1;
+  const cellW = canvas.width / pixelCols;
+  const cellH = canvas.height / pixelRows;
+
+  for (let x = 0; x <= canvas.width; x += cellW) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, canvas.height);
+    ctx.stroke();
+  }
+  for (let y = 0; y <= canvas.height; y += cellH) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(canvas.width, y);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1.0;
+}
+
+function rgbToHex(r, g, b) {
+  return "#" + [r, g, b].map(v => {
+    const hex = v.toString(16);
+    return hex.length === 1 ? "0" + hex : hex;
+  }).join('');
+}
+</script>
+</body>
+</html>
